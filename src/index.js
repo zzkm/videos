@@ -19,6 +19,35 @@ function unb64(s) {
   return u;
 }
 
+
+// ---- 初回アクセス時にテーブルを自動作成 (手動で schema.sql を流さなくてOK) ----
+const TABLES = {
+  videos: ["id","title","description","mime","size","chunk_size","chunks","status","thumb","duration","views","likes","dislikes","shares","token","created_at"],
+  chunks: ["video_id","idx","data"],
+  reactions: ["video_id","voter","value"],
+  comments: ["id","video_id","name","body","created_at"],
+};
+const DDL = [
+  "CREATE TABLE IF NOT EXISTS videos(id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT DEFAULT '', mime TEXT NOT NULL, size INTEGER NOT NULL, chunk_size INTEGER NOT NULL, chunks INTEGER NOT NULL, status TEXT DEFAULT 'uploading', thumb TEXT, duration REAL DEFAULT 0, views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, dislikes INTEGER DEFAULT 0, shares INTEGER DEFAULT 0, token TEXT NOT NULL, created_at INTEGER NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS chunks(video_id TEXT, idx INTEGER, data TEXT NOT NULL, PRIMARY KEY(video_id, idx))",
+  "CREATE TABLE IF NOT EXISTS reactions(video_id TEXT, voter TEXT, value INTEGER, PRIMARY KEY(video_id, voter))",
+  "CREATE TABLE IF NOT EXISTS comments(id INTEGER PRIMARY KEY AUTOINCREMENT, video_id TEXT, name TEXT, body TEXT, created_at INTEGER)",
+  "CREATE INDEX IF NOT EXISTS fv_idx_comments ON comments(video_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS fv_idx_videos ON videos(status, created_at)",
+];
+let schemaP = null;
+function ensureSchema(env) {
+  return (schemaP ||= (async () => {
+    for (const [t, cols] of Object.entries(TABLES)) {
+      const { results } = await env.DB.prepare(`PRAGMA table_info(${t})`).all();
+      // 古い別スキーマのテーブルがあれば、消さずにリネームして退避
+      if (results.length && !cols.every(c => results.some(r => r.name === c)))
+        await env.DB.prepare(`ALTER TABLE ${t} RENAME TO ${t}_old_${Date.now()}`).run();
+    }
+    await env.DB.batch(DDL.map(q => env.DB.prepare(q)));
+  })().catch(e => { schemaP = null; throw e; }));
+}
+
 async function page(env, req, id) {
   let meta = "", status = 200;
   if (id) {
@@ -176,6 +205,7 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url), p = url.pathname;
     try {
+      if (p === "/" || p.startsWith("/api/") || p.startsWith("/videos/")) await ensureSchema(env);
       if (p.startsWith("/api/")) return await api(env, req, url);
       let m;
       if ((m = p.match(/^\/videos\/(\w+)\/stream$/))) return await stream(env, req, m[1]);
