@@ -2,34 +2,39 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ls={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:k=>{try{localStorage.removeItem(k)}catch{}}};
 const voter=ls.get('voter')||(()=>{const v=crypto.randomUUID();ls.set('voter',v);return v})();
-const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),2400)};
+const toast=(m,bad)=>{const t=$('#toast');t.textContent=m;t.className=bad?'show err':'show';clearTimeout(toast.t);toast.t=setTimeout(()=>t.className='',2600)};
 async function api(p,o={}){const r=await fetch(p,{...o,headers:{'content-type':'application/json',...(o.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'Something went wrong');return d}
+const num=x=>Number.isFinite(+x)&&x!==null&&x!==''?+x:0;
+const first=(o,...k)=>{for(const a of k)if(o[a]!=null)return o[a];return 0};
+const pl=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+// APIの欠けた/別名のフィールドがあっても undefined/NaN を出さない
+const norm=v=>({...v,views:num(first(v,'views','view_count')),likes:num(first(v,'likes','like_count')),dislikes:num(first(v,'dislikes','dislike_count')),shares:num(first(v,'shares','share_count')),duration:num(v.duration),created_at:num(first(v,'created_at','createdAt'))});
 const dur=s=>{s=Math.round(s||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=String(s%60).padStart(2,'0');return h?`${h}:${String(m).padStart(2,'0')}:${x}`:`${m}:${x}`};
-const ago=t=>{const s=(Date.now()-t)/1000,n=(x,u)=>`${x} ${u}${x===1?'':'s'} ago`;if(s<60)return'just now';if(s<3600)return n(Math.floor(s/60),'min');if(s<86400)return n(Math.floor(s/3600),'hour');if(s<2592000)return n(Math.floor(s/86400),'day');return new Date(t).toLocaleDateString('en-US')};
-const card=v=>`<a class="card" href="/videos/${v.id}"><div class="th"><img loading="lazy" draggable="false" src="/videos/${v.id}/thumb.jpg" alt="" onerror="this.remove()"><span class="dur">${dur(v.duration)}</span></div><div><h3>${esc(v.title)}</h3><p>${v.views} views · ${ago(v.created_at)}<br>👍 ${v.likes}</p></div></a>`;
+const ago=t=>{if(!t)return'';if(t<1e11)t*=1000;const s=(Date.now()-t)/1000,n=(x,u)=>`${x} ${u}${x===1?'':'s'} ago`;if(s<60)return'just now';if(s<3600)return n(Math.floor(s/60),'min');if(s<86400)return n(Math.floor(s/3600),'hour');if(s<2592000)return n(Math.floor(s/86400),'day');return new Date(t).toLocaleDateString('en-US')};
+const card=v0=>{const v=norm(v0);return `<a class="card" href="/videos/${v.id}"><div class="thumb"><img loading="lazy" draggable="false" src="/videos/${v.id}/thumb.jpg" alt="" onerror="this.replaceWith('🎬')"><span class="dur">${dur(v.duration)}</span></div><div class="info"><div class="t">${esc(v.title)}</div><div class="m">${pl(v.views,'view')} · ${ago(v.created_at)} · 👍 ${v.likes}</div></div></a>`;}
 
 /* ---------- Home ---------- */
 function home(){
   const q=new URLSearchParams(location.search).get('q')||'';
-  $('#app').innerHTML=`<section class="hero" id="upload"><h1>Drop a video.<br>Get a link.</h1>
-  <label id="drop" class="drop"><input type="file" id="file" accept="video/*" hidden><b>Drop your video here</b><span>or tap to choose · no signup · max 100 MB</span></label>
-  <form id="up" hidden><input id="t" maxlength="100" placeholder="Title" required><textarea id="d" rows="2" maxlength="2000" placeholder="Description (optional)"></textarea>
-  <div class="bar" hidden><i></i></div><button class="btn">Upload</button></form></section>
-  <div class="toolbar"><nav class="tabs"><button data-s="new" class="on">New</button><button data-s="top">Popular</button></nav>
-  <form id="sf" class="sf"><input id="q" type="search" placeholder="Search videos" aria-label="Search videos" value="${esc(q)}"><button class="btn small">Search</button></form></div><div id="grid" class="grid"></div>`;
-  $('#sf').onsubmit=e=>{e.preventDefault();location.href='/?q='+encodeURIComponent($('#q').value)};
+  $('#app').innerHTML=`<section class="panel" id="upload"><h1>Upload a video. Get a link.</h1><p class="sub">No signup. No email. Drop a file, share the link.</p>
+  <label id="drop" class="drop"><input type="file" id="file" accept="video/*" hidden><span id="dt">Drop your video here, or tap to choose (max 100 MB)</span></label>
+  <div id="up" hidden><input id="t" maxlength="100" placeholder="Title" required><textarea id="d" rows="2" maxlength="2000" placeholder="Description (optional)"></textarea>
+  <button class="btn big" id="go">Upload</button><div class="bar" hidden><i></i><span>0%</span></div></div></section>
+  <div class="row"><h2>Videos</h2><input id="q" type="search" placeholder="Search videos" aria-label="Search videos" value="${esc(q)}"></div>
+  <div class="actions" id="tabs"><button class="pill like on" data-s="new">New</button><button class="pill like" data-s="top">Popular</button></div><div id="grid" class="grid"></div>`;
+  $('#q').onkeydown=e=>{if(e.key==='Enter')location.href='/?q='+encodeURIComponent($('#q').value)};
   if(location.hash==='#upload')$('#upload').scrollIntoView();
-  let file=null;const drop=$('#drop'),form=$('#up');
-  const pick=f=>{if(!f)return;if(!f.type.startsWith('video/'))return toast('Please choose a video file');file=f;form.hidden=false;$('#t').value=f.name.replace(/\.[^.]+$/,'');$('#t').focus();drop.querySelector('b').textContent=f.name;drop.querySelector('span').textContent=(f.size/1048576).toFixed(1)+' MB'};
+  let file=null;const drop=$('#drop');
+  const pick=f=>{if(!f)return;if(!f.type.startsWith('video/'))return toast('Please choose a video file',true);file=f;$('#up').hidden=false;$('#t').value=f.name.replace(/\.[^.]+$/,'');$('#t').focus();$('#dt').textContent=f.name+' ('+(f.size/1048576).toFixed(1)+' MB)'};
   $('#file').onchange=e=>pick(e.target.files[0]);
   ['dragenter','dragover'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.add('over')}));
   ['dragleave','drop'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.remove('over')}));
   drop.addEventListener('drop',e=>pick(e.dataTransfer.files[0]));
-  form.onsubmit=async e=>{e.preventDefault();if(!file)return;const btn=form.querySelector('button'),bar=form.querySelector('.bar');btn.disabled=true;bar.hidden=false;
-    try{const id=await upload(file,$('#t').value,$('#d').value,p=>{bar.firstChild.style.width=p+'%';btn.textContent=Math.floor(p)+'%'});location.href='/videos/'+id}
-    catch(x){toast(x.message);btn.disabled=false;btn.textContent='Try upload again'}};
-  const load=async s=>{const g=$('#grid');try{const l=await api(`/api/videos?sort=${s}&q=${encodeURIComponent(q)}`);g.innerHTML=l.length?l.map(card).join(''):'<div class="empty">No videos yet. Drop the first one!</div>'}catch(x){g.innerHTML='<div class="empty">'+esc(x.message)+'</div>'}};
-  document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(o=>o.classList.toggle('on',o===b));load(b.dataset.s)});
+  $('#go').onclick=async()=>{if(!file)return;if(!$('#t').value.trim())return toast('Enter a title',true);const btn=$('#go'),bar=$('#up .bar');btn.disabled=true;bar.hidden=false;
+    try{const id=await upload(file,$('#t').value,$('#d').value,p=>{bar.querySelector('i').style.width=p+'%';bar.querySelector('span').textContent=Math.floor(p)+'%'});location.href='/videos/'+id}
+    catch(x){toast(x.message,true);btn.disabled=false;btn.textContent='Try again'}};
+  const load=async s=>{const g=$('#grid');try{const l=await api(`/api/videos?sort=${s}&q=${encodeURIComponent(q)}`);g.innerHTML=l.length?l.map(card).join(''):'<div class="empty">No videos yet. Be the first to upload!</div>'}catch(x){g.innerHTML='<div class="empty">'+esc(x.message)+'</div>'}};
+  document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tabs button').forEach(o=>o.classList.toggle('on',o===b));load(b.dataset.s)});
   load('new');
 }
 function thumbOf(file){return new Promise(res=>{const v=document.createElement('video'),u=URL.createObjectURL(file);let fin=false;
@@ -54,7 +59,7 @@ async function upload(file,title,description,onp){
 /* ---------- Custom player (no native controls / no download UI) ---------- */
 function player(root){
   const v=root.querySelector('video'),q=s=>root.querySelector(s);
-  const play=q('[data-a=play]'),mute=q('[data-a=mute]'),spd=q('[data-a=spd]'),big=q('.big'),pg=q('.pg'),bf=q('.buf'),tm=q('.tm'),seek=q('.seek'),vol=q('.vol'),shield=q('.shield');
+  const play=q('[data-a=play]'),mute=q('[data-a=mute]'),spd=q('[data-a=spd]'),big=q('.bigplay'),pg=q('.pg'),bf=q('.buf'),tm=q('.tm'),seek=q('.seek'),vol=q('.vol'),shield=q('.shield');
   const rates=[.5,1,1.25,1.5,2];let hide,drag=false;
   const show=()=>{root.classList.add('ui');clearTimeout(hide);if(!v.paused)hide=setTimeout(()=>root.classList.remove('ui'),2500)};
   const toggle=()=>{v.paused||v.ended?v.play().catch(()=>{}):v.pause()};
@@ -87,35 +92,37 @@ function player(root){
 
 /* ---------- Watch page ---------- */
 async function watch(id){
-  let v;try{v=await api(`/api/videos/${id}?voter=${voter}`)}catch{$('#app').innerHTML='<div class="empty"><h2>Video not found</h2><a href="/" style="text-decoration:underline">Back to home</a></div>';return}
+  let v;try{v=norm(await api(`/api/videos/${id}?voter=${voter}`))}catch{$('#app').innerHTML='<div class="empty"><h2>Video not found</h2><a href="/" style="text-decoration:underline">Back to home</a></div>';return}
   document.title=v.title+' - Free Vidz';
   const own=!!ls.get('tok:'+id),url=location.origin+'/videos/'+id;
-  $('#app').innerHTML=`<div class="watch"><div>
+  $('#app').innerHTML=`<div class="watch">
   <div class="pl ui" id="pl" tabindex="0" aria-label="Video player">
     <video playsinline preload="metadata" poster="/videos/${id}/thumb.jpg" src="/videos/${id}/stream" controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback draggable="false"></video>
-    <div class="shield"></div><button class="big" aria-label="Play">▶</button>
+    <div class="shield"></div><button class="bigplay" aria-label="Play">▶</button>
     <div class="ctl"><div class="seek" role="slider" aria-label="Seek"><i class="buf"></i><i class="pg"></i></div>
-    <div class="row"><button data-a="play" aria-label="Play/Pause">▶</button><button data-a="mute" aria-label="Mute">🔊</button><input class="vol" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume"><span class="tm">0:00 / 0:00</span><span style="flex:1"></span><button data-a="spd" aria-label="Speed">1x</button><button data-a="fs" aria-label="Fullscreen">⛶</button></div></div>
+    <div class="cr"><button data-a="play" aria-label="Play/Pause">▶</button><button data-a="mute" aria-label="Mute">🔊</button><input class="vol" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume"><span class="tm">0:00 / 0:00</span><span style="flex:1"></span><button data-a="spd" aria-label="Speed">1x</button><button data-a="fs" aria-label="Fullscreen">⛶</button></div></div>
   </div>
   <h1>${esc(v.title)}</h1><div class="meta" id="meta"></div>
-  <div class="acts"><button class="pill" id="lk"></button><button class="pill bad" id="dk"></button><button class="pill" id="sh">Share</button>${own?'<button class="pill del" id="rm">Delete</button>':''}</div>
-  <div class="share" id="shp"><a target="_blank" rel="noopener" href="https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(v.title)}">X</a><a target="_blank" rel="noopener" href="https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(url)}">LINE</a><a target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}">Facebook</a><button id="cp">Copy link</button></div>
-  ${v.description?`<div class="desc">${esc(v.description)}</div>`:''}
-  <h2 style="font-size:17px;margin:24px 0 0">Comments</h2>
-  <form class="cform" id="cf"><input id="cn" maxlength="30" placeholder="Name (optional)" value="${esc(ls.get('name')||'')}"><textarea id="cb" rows="2" maxlength="500" placeholder="Add a comment" required></textarea><button class="btn" style="justify-self:start">Post</button></form>
-  <div id="cl"></div></div><aside class="side" id="side"></aside></div>`;
+  <div class="actions"><button class="pill like" id="lk"></button><button class="pill dislike" id="dk"></button><button class="pill" id="sh">Share</button>${own?'<button class="pill danger" id="rm">Delete</button>':''}</div>
+  <div class="panel share" id="shp" hidden><input id="lnk" readonly value="${esc(url)}" aria-label="Video link">
+    <a class="chip" target="_blank" rel="noopener" href="https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(v.title)}">X</a><a class="chip" target="_blank" rel="noopener" href="https://social-plugins.line.me/lineit/share?url=${encodeURIComponent(url)}">LINE</a><a class="chip" target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}">Facebook</a><button class="chip" id="cp">Copy link</button></div>
+  ${v.description?`<div class="panel desc">${esc(v.description)}</div>`:''}
+  <div class="panel"><h2>Comments</h2>
+  <form class="cform" id="cf"><input id="cn" maxlength="30" placeholder="Name (optional)" value="${esc(ls.get('name')||'')}"><textarea id="cb" rows="2" maxlength="500" placeholder="Add a comment" required></textarea><button class="btn small">Post</button></form>
+  <div id="cl"></div></div>
+  <h2>More videos</h2><div class="grid" id="side"></div></div>`;
   player($('#pl'));
-  const draw=()=>{$('#lk').className='pill'+(v.my===1?' on':'');$('#dk').className='pill bad'+(v.my===-1?' on':'');$('#lk').textContent='👍 '+v.likes;$('#dk').textContent='👎 '+v.dislikes;$('#meta').textContent=`${v.views} views · ${ago(v.created_at)} · ${v.shares} shares`};draw();
-  const react=async val=>{try{const r=await api(`/api/videos/${id}/react`,{method:'POST',body:JSON.stringify({voter,value:v.my===val?0:val})});Object.assign(v,r);draw()}catch(e){toast(e.message)}};
+  const draw=()=>{$('#lk').className='pill like'+(v.my===1?' on':'');$('#dk').className='pill dislike'+(v.my===-1?' on':'');$('#lk').textContent='👍 '+num(v.likes);$('#dk').textContent='👎 '+num(v.dislikes);$('#meta').textContent=[pl(v.views,'view'),ago(v.created_at),pl(v.shares,'share')].filter(Boolean).join(' · ')};draw();
+  const react=async val=>{try{const r=await api(`/api/videos/${id}/react`,{method:'POST',body:JSON.stringify({voter,value:v.my===val?0:val})});v=norm({...v,...r});draw()}catch(e){toast(e.message,true)}};
   $('#lk').onclick=()=>react(1);$('#dk').onclick=()=>react(-1);
-  const counted=()=>{fetch(`/api/videos/${id}/share`,{method:'POST'});v.shares++;draw()};
-  $('#sh').onclick=async()=>{if(navigator.share){try{await navigator.share({title:v.title,url});counted();return}catch{}}$('#shp').classList.toggle('on')};
+  const counted=()=>{fetch(`/api/videos/${id}/share`,{method:'POST'});v.shares=num(v.shares)+1;draw()};
+  $('#sh').onclick=async()=>{if(navigator.share){try{await navigator.share({title:v.title,url});counted();return}catch{}}$('#shp').hidden=!$('#shp').hidden};
   $('#shp').addEventListener('click',e=>{if(e.target.closest('a'))counted()});
   $('#cp').onclick=async()=>{try{await navigator.clipboard.writeText(url);toast('Link copied');counted()}catch{prompt('Link',url)}};
-  if($('#rm'))$('#rm').onclick=async()=>{if(!confirm('Delete this video? This cannot be undone.'))return;try{await api('/api/videos/'+id,{method:'DELETE',headers:{'x-token':ls.get('tok:'+id)}});ls.del('tok:'+id);location.href='/'}catch(e){toast(e.message)}};
-  const cl=l=>{$('#cl').innerHTML=l.length?l.map(c=>`<div class="cm"><b>${esc(c.name)}</b><small>${ago(c.created_at)}</small><p>${esc(c.body)}</p></div>`).join(''):'<div class="meta">Be the first to comment.</div>'};
+  if($('#rm'))$('#rm').onclick=async()=>{if(!confirm('Delete this video? This cannot be undone.'))return;try{await api('/api/videos/'+id,{method:'DELETE',headers:{'x-token':ls.get('tok:'+id)}});ls.del('tok:'+id);location.href='/'}catch(e){toast(e.message,true)}};
+  const cl=l=>{$('#cl').innerHTML=l.length?l.map(c=>`<div class="cm"><b>${esc(c.name)}</b><small>${ago(c.created_at)}</small><p>${esc(c.body)}</p></div>`).join(''):'<div class="meta">No comments yet. Say something!</div>'};
   api(`/api/videos/${id}/comments`).then(cl);
-  $('#cf').onsubmit=async e=>{e.preventDefault();ls.set('name',$('#cn').value);try{cl(await api(`/api/videos/${id}/comments`,{method:'POST',body:JSON.stringify({name:$('#cn').value,body:$('#cb').value})}));$('#cb').value=''}catch(x){toast(x.message)}};
+  $('#cf').onsubmit=async e=>{e.preventDefault();ls.set('name',$('#cn').value);try{cl(await api(`/api/videos/${id}/comments`,{method:'POST',body:JSON.stringify({name:$('#cn').value,body:$('#cb').value})}));$('#cb').value=''}catch(x){toast(x.message,true)}};
   api('/api/videos?limit=12').then(l=>{$('#side').innerHTML=l.filter(x=>x.id!==id).slice(0,10).map(card).join('')});
   if(!sessionStorage.getItem('v:'+id)){sessionStorage.setItem('v:'+id,1);fetch(`/api/videos/${id}/view`,{method:'POST'})}
 }
