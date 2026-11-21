@@ -157,14 +157,6 @@ async function api(env, req, url) {
       v.my = voter ? (await DB.prepare("SELECT value FROM reactions WHERE video_id=? AND voter=?").bind(id, voter).first())?.value || 0 : 0;
       return json(v);
     }
-    if (method === "DELETE") {
-      const v = await DB.prepare("SELECT token FROM videos WHERE id=?").bind(id).first();
-      if (!v || v.token !== req.headers.get("x-token")) return err("Not allowed", 403);
-      await DB.batch(["chunks", "reactions", "comments"].map(t => DB.prepare(`DELETE FROM ${t} WHERE video_id=?`).bind(id))
-        .concat(DB.prepare("DELETE FROM videos WHERE id=?").bind(id)));
-      return json({ ok: true });
-    }
-  }
 
   if ((m = p.match(/^\/api\/videos\/(\w+)\/(view|share)$/)) && method === "POST") {
     const col = m[2] === "view" ? "views" : "shares";
