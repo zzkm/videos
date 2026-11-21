@@ -10,4 +10,4 @@ run_worker_first = true
 [[d1_databases]]
 binding = "DB"
 database_name = "video"
-database_id = "90179861-adc1-4fcd-a73c-1e980fdd53f7"
+database_id = "31840075-57d6-4c51-bcd1-697ed94fd81f"
