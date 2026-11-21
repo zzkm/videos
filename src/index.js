@@ -76,7 +76,7 @@ async function api(env, req, url) {
     const q = (url.searchParams.get("q") || "").trim().slice(0, 50);
     const limit = Math.min(Number(url.searchParams.get("limit")) || 24, 48);
     const where = q ? "AND title LIKE ? ESCAPE '\\'" : "";
-    const st = DB.prepare(`SELECT id,title,duration,views,likes,created_at FROM videos WHERE status='ready' ${where} ORDER BY ${sort} LIMIT ?`);
+    const st = DB.prepare(`SELECT id,title,COALESCE(duration,0) duration,COALESCE(views,0) views,COALESCE(likes,0) likes,created_at FROM videos WHERE status='ready' ${where} ORDER BY ${sort} LIMIT ?`);
     const like = "%" + q.replace(/[\\%_]/g, "\\$&") + "%";
     const { results } = await (q ? st.bind(like, limit) : st.bind(limit)).all();
     return json(results);
@@ -122,7 +122,7 @@ async function api(env, req, url) {
   if ((m = p.match(/^\/api\/videos\/(\w+)$/))) {
     const id = m[1];
     if (method === "GET") {
-      const v = await DB.prepare("SELECT id,title,description,mime,size,duration,views,likes,dislikes,shares,created_at FROM videos WHERE id=? AND status='ready'").bind(id).first();
+      const v = await DB.prepare("SELECT id,title,description,mime,size,COALESCE(duration,0) duration,COALESCE(views,0) views,COALESCE(likes,0) likes,COALESCE(dislikes,0) dislikes,COALESCE(shares,0) shares,created_at FROM videos WHERE id=? AND status='ready'").bind(id).first();
       if (!v) return err("Not found", 404);
       const voter = (url.searchParams.get("voter") || "").slice(0, 64);
       v.my = voter ? (await DB.prepare("SELECT value FROM reactions WHERE video_id=? AND voter=?").bind(id, voter).first())?.value || 0 : 0;
@@ -139,7 +139,7 @@ async function api(env, req, url) {
 
   if ((m = p.match(/^\/api\/videos\/(\w+)\/(view|share)$/)) && method === "POST") {
     const col = m[2] === "view" ? "views" : "shares";
-    await DB.prepare(`UPDATE videos SET ${col}=${col}+1 WHERE id=? AND status='ready'`).bind(m[1]).run();
+    await DB.prepare(`UPDATE videos SET ${col}=COALESCE(${col},0)+1 WHERE id=? AND status='ready'`).bind(m[1]).run();
     return json({ ok: true });
   }
 
@@ -152,8 +152,8 @@ async function api(env, req, url) {
     await DB.batch([
       nv ? DB.prepare("INSERT OR REPLACE INTO reactions(video_id,voter,value) VALUES(?,?,?)").bind(id, voter, nv)
          : DB.prepare("DELETE FROM reactions WHERE video_id=? AND voter=?").bind(id, voter),
-      DB.prepare("UPDATE videos SET likes=MAX(0,likes+?),dislikes=MAX(0,dislikes+?) WHERE id=?").bind(dl, dd, id)]);
-    const v = await DB.prepare("SELECT likes,dislikes FROM videos WHERE id=?").bind(id).first();
+      DB.prepare("UPDATE videos SET likes=MAX(0,COALESCE(likes,0)+?),dislikes=MAX(0,COALESCE(dislikes,0)+?) WHERE id=?").bind(dl, dd, id)]);
+    const v = await DB.prepare("SELECT COALESCE(likes,0) likes,COALESCE(dislikes,0) dislikes FROM videos WHERE id=?").bind(id).first();
     return json({ ...v, my: nv });
   }
 
