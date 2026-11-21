@@ -158,6 +158,22 @@ async function api(env, req, url) {
       return json(v);
     }
 
+    if (method === "DELETE") {
+      const v = await DB.prepare("SELECT token FROM videos WHERE id=?").bind(id).first();
+      if (!v) return err("Not found", 404);
+      const token = req.headers.get("x-token") || url.searchParams.get("token");
+      if (v.token !== token) return err("Not allowed", 403);
+
+      await DB.batch([
+        DB.prepare("DELETE FROM chunks WHERE video_id=?").bind(id),
+        DB.prepare("DELETE FROM reactions WHERE video_id=?").bind(id),
+        DB.prepare("DELETE FROM comments WHERE video_id=?").bind(id),
+        DB.prepare("DELETE FROM videos WHERE id=?").bind(id),
+      ]);
+      return json({ ok: true });
+    }
+  }
+
   if ((m = p.match(/^\/api\/videos\/(\w+)\/(view|share)$/)) && method === "POST") {
     const col = m[2] === "view" ? "views" : "shares";
     await DB.prepare(`UPDATE videos SET ${col}=COALESCE(${col},0)+1 WHERE id=? AND status='ready'`).bind(m[1]).run();
